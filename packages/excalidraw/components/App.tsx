@@ -259,6 +259,7 @@ import {
   maybeHandleArrowPointlikeDrag,
   getUncroppedWidthAndHeight,
   getActiveTextElement,
+  setFreeDrawPredictedPoint,
 } from "@excalidraw/element";
 
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
@@ -8818,7 +8819,7 @@ class App extends React.Component<AppProps, AppState> {
       y: gridY,
     });
 
-    const simulatePressure = event.pressure === 0.5;
+    const simulatePressure = this.state.currentItemFreedrawConstantPressure;
 
     const element = newFreeDrawElement({
       type: elementType,
@@ -9478,7 +9479,7 @@ class App extends React.Component<AppProps, AppState> {
   private onPointerMoveFromPointerDownHandler(
     pointerDownState: PointerDownState,
   ) {
-    return withBatchedUpdatesThrottled((event: PointerEvent) => {
+    const handler = (event: PointerEvent) => {
       if (this.state.openDialog?.name === "elementLinkSelector") {
         return;
       }
@@ -10202,6 +10203,28 @@ class App extends React.Component<AppProps, AppState> {
             }
           }
 
+          // Update the predicted next point for smoother stroke rendering.
+          // getPredictedEvents() returns samples predicted by the browser for
+          // the current pointer position, compensating for event-delivery
+          // latency (especially useful with Apple Pencil / high-frequency
+          // stylus input).  We pass the first predicted point to the renderer
+          // so it can (a) use it as a Catmull-Rom look-ahead tangent and
+          // (b) draw a ghost segment toward the predicted position.
+          const predictedEvents: PointerEvent[] =
+            event.getPredictedEvents?.() ?? [];
+          if (predictedEvents.length > 0) {
+            const predCoords = viewportCoordsToSceneCoords(
+              predictedEvents[0],
+              this.state,
+            );
+            setFreeDrawPredictedPoint(newElement.id, [
+              predCoords.x - newElement.x,
+              predCoords.y - newElement.y,
+            ]);
+          } else {
+            setFreeDrawPredictedPoint(newElement.id, null);
+          }
+
           if (newPoints.length > 0) {
             const pressures = newElement.simulatePressure
               ? newElement.pressures
@@ -10368,7 +10391,23 @@ class App extends React.Component<AppProps, AppState> {
           });
         }
       }
-    });
+    };
+
+    // For freedraw, bypass RAF throttling so every pointer event is processed
+    // synchronously. This preserves coalesced pointer events and eliminates
+    // stroke lag on high-frequency stylus / pointer input.
+    if (this.state.activeTool.type === "freedraw") {
+      const immediate = withBatchedUpdates(handler);
+      const result = immediate as typeof immediate & {
+        flush(): void;
+        cancel(): void;
+      };
+      result.flush = () => {};
+      result.cancel = () => {};
+      return result;
+    }
+
+    return withBatchedUpdatesThrottled(handler);
   }
 
   // Returns whether the pointer move happened over either scrollbar
