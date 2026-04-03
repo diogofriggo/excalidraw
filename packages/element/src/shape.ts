@@ -1258,6 +1258,7 @@ const getSvgPathFromPoints = (
 
 const FIXED_FREEDRAW_MIN_SMOOTH_ALIGNMENT = 0.6;
 const FIXED_FREEDRAW_MIN_SMOOTH_SEGMENT_LENGTH = 0.2;
+const FIXED_FREEDRAW_MIN_CORNER_ALIGNMENT = -0.25;
 const FIXED_FREEDRAW_MIN_CORNER_ROUNDING = 0.75;
 const FIXED_FREEDRAW_MAX_CORNER_ROUNDING = 6;
 const FIXED_FREEDRAW_CORNER_ROUNDING_FACTOR = 0.35;
@@ -1310,7 +1311,10 @@ const getFixedFreeDrawRoundedCorner = (
     (previousDeltaX * nextDeltaX + previousDeltaY * nextDeltaY) /
     (previousSegmentLength * nextSegmentLength);
 
-  if (alignment >= FIXED_FREEDRAW_MIN_SMOOTH_ALIGNMENT) {
+  if (
+    alignment >= FIXED_FREEDRAW_MIN_SMOOTH_ALIGNMENT ||
+    alignment <= FIXED_FREEDRAW_MIN_CORNER_ALIGNMENT
+  ) {
     return null;
   }
 
