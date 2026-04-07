@@ -4,8 +4,9 @@ import { Excalidraw } from "@excalidraw/excalidraw";
 
 import "@excalidraw/excalidraw/index.css";
 
-import App from "../../with-script-in-browser/components/ExampleApp";
 import type { ScrollConstraints } from "@excalidraw/excalidraw/types";
+
+import App from "../../with-script-in-browser/components/ExampleApp";
 
 const scrollConstraints: ScrollConstraints = {
   x: 0,
@@ -25,9 +26,7 @@ const ExcalidrawWrapper: React.FC = () => {
         useCustom={(api: any, args?: any[]) => {}}
         excalidrawLib={excalidrawLib}
       >
-        <Excalidraw
-        // scrollConstraints={scrollConstraints}
-        />
+        <Excalidraw scrollConstraints={scrollConstraints} />
       </App>
     </>
   );

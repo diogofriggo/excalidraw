@@ -1,5 +1,6 @@
-import type { AppState, NormalizedZoomValue } from "../types";
 import { constrainScrollState } from "./scrollConstraints";
+
+import type { AppState, NormalizedZoomValue } from "../types";
 
 /**
  * When zooming out with scroll constraints active, the cursor-anchored zoom may
@@ -30,11 +31,19 @@ export const getConstrainedZoomAnchor = (
   const newScrollY = state.scrollY + appLayerY * factor;
 
   const constrained = constrainScrollState(
-    { ...state, scrollX: newScrollX, scrollY: newScrollY, zoom: { value: nextZoom } },
+    {
+      ...state,
+      scrollX: newScrollX,
+      scrollY: newScrollY,
+      zoom: { value: nextZoom },
+    },
     "rigid",
   );
 
-  if (constrained.scrollX === newScrollX && constrained.scrollY === newScrollY) {
+  if (
+    constrained.scrollX === newScrollX &&
+    constrained.scrollY === newScrollY
+  ) {
     return { viewportX, viewportY };
   }
 

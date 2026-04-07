@@ -4531,18 +4531,16 @@ class App extends React.Component<AppProps, AppState> {
           this.setState({ shouldCacheIgnoreZoom: false });
         },
       });
+    } else if (scrollConstraints) {
+      this.setState({
+        scrollX,
+        scrollY,
+        zoom,
+        scrollConstraints,
+        viewModeEnabled: true,
+      });
     } else {
-      if (scrollConstraints) {
-        this.setState({
-          scrollX,
-          scrollY,
-          zoom,
-          scrollConstraints,
-          viewModeEnabled: true,
-        });
-      } else {
-        this.setState({ scrollX, scrollY, zoom });
-      }
+      this.setState({ scrollX, scrollY, zoom });
     }
   };
 
