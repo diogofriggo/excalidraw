@@ -178,7 +178,7 @@ export default function ExampleApp({
     const newElement = cloneElement(
       Excalidraw,
       {
-        excalidrawAPI: (api: ExcalidrawImperativeAPI) => setExcalidrawAPI(api),
+        onExcalidrawAPI: (api: ExcalidrawImperativeAPI | null) => setExcalidrawAPI(api),
         initialData: initialStatePromiseRef.current.promise,
         onChange: (
           elements: NonDeletedExcalidrawElement[],

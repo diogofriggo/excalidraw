@@ -2967,6 +2967,7 @@ class App extends React.Component<AppProps, AppState> {
     if (this.props.scrollConstraints) {
       restoredAppState = {
         ...restoredAppState,
+        scrollConstraints: this.props.scrollConstraints,
         ...calculateConstrainedScrollCenter(this.state, restoredAppState),
       };
     } else if (initialData?.scrollToContent) {
