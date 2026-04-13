@@ -71,6 +71,12 @@ export const CaptureUpdateAction = {
 export type CaptureUpdateActionType = ValueOf<typeof CaptureUpdateAction>;
 
 type MicroActionsQueue = (() => void)[];
+// Dedicated queue for synthetic durable increments that must commit
+// outside regular micro/macro capture batches.
+type IsolatedIncrementsQueue = Array<{
+  change: StoreChange;
+  delta: StoreDelta;
+}>;
 
 /**
  * Store which captures the observed changes and emits them as `StoreIncrement` events.
@@ -85,6 +91,9 @@ export class Store {
 
   private scheduledMacroActions: Set<CaptureUpdateActionType> = new Set();
   private scheduledMicroActions: MicroActionsQueue = [];
+  private isolatedIncrementsQueue: IsolatedIncrementsQueue = [];
+  private isFlushingIsolatedIncrements = false;
+  private cancelIsolatedFlushRetry: (() => void) | null = null;
 
   private _snapshot = StoreSnapshot.empty();
 
@@ -197,6 +206,91 @@ export class Store {
       this.satisfiesScheduledActionsInvariant();
       // defensively reset all scheduled "macro" actions, possibly cleans up other runtime garbage
       this.scheduledMacroActions = new Set();
+      if (this.hasPendingIsolatedIncrements()) {
+        this.requestIsolatedIncrementFlush();
+      }
+    }
+  }
+
+  /**
+   * Returns true when no micro/macro actions are currently pending.
+   */
+  public isIdle() {
+    return (
+      this.scheduledMicroActions.length === 0 &&
+      this.scheduledMacroActions.size === 0
+    );
+  }
+
+  /** Queues a durable increment to be committed through the isolated lane. */
+  public enqueueIsolatedIncrement(params: {
+    change: StoreChange;
+    delta: StoreDelta;
+  }) {
+    this.isolatedIncrementsQueue.push(params);
+    this.requestIsolatedIncrementFlush();
+  }
+
+  public hasPendingIsolatedIncrements() {
+    return this.isolatedIncrementsQueue.length > 0;
+  }
+
+  /**
+   * Flushes isolated increments only when the regular store queue is idle.
+   * Returns whether at least one isolated increment was committed.
+   */
+  public flushIsolatedIncrements() {
+    if (this.isFlushingIsolatedIncrements) {
+      return false;
+    }
+    if (!this.hasPendingIsolatedIncrements() || !this.isIdle()) {
+      return false;
+    }
+
+    this.isFlushingIsolatedIncrements = true;
+    let flushedAny = false;
+    try {
+      while (this.hasPendingIsolatedIncrements() && this.isIdle()) {
+        const entry = this.isolatedIncrementsQueue.shift()!;
+        this.scheduleMicroAction({
+          action: CaptureUpdateAction.IMMEDIATELY,
+          change: entry.change,
+          delta: entry.delta,
+        });
+        this.commit(
+          this.app.scene.getElementsMapIncludingDeleted(),
+          this.app.state,
+        );
+        flushedAny = true;
+      }
+    } finally {
+      this.isFlushingIsolatedIncrements = false;
+    }
+
+    return flushedAny;
+  }
+
+  /**
+   * Retries isolated queue flushing once store queues are idle again.
+   * This keeps isolated durable commits out of active micro/macro batches.
+   */
+  private scheduleDeferredIsolatedIncrementFlush() {
+    if (this.cancelIsolatedFlushRetry) {
+      return;
+    }
+
+    // Store is used in the browser editor runtime; defer one frame and retry.
+    const rafId = requestAnimationFrame(() => {
+      this.cancelIsolatedFlushRetry = null;
+      this.requestIsolatedIncrementFlush();
+    });
+    this.cancelIsolatedFlushRetry = () => cancelAnimationFrame(rafId);
+  }
+
+  private requestIsolatedIncrementFlush() {
+    const flushed = this.flushIsolatedIncrements();
+    if (!flushed && this.hasPendingIsolatedIncrements()) {
+      this.scheduleDeferredIsolatedIncrementFlush();
     }
   }
 
@@ -204,8 +298,15 @@ export class Store {
    * Clears the store instance.
    */
   public clear(): void {
+    if (this.cancelIsolatedFlushRetry) {
+      this.cancelIsolatedFlushRetry();
+      this.cancelIsolatedFlushRetry = null;
+    }
     this.snapshot = StoreSnapshot.empty();
     this.scheduledMacroActions = new Set();
+    this.scheduledMicroActions = [];
+    this.isolatedIncrementsQueue = [];
+    this.isFlushingIsolatedIncrements = false;
   }
 
   /**

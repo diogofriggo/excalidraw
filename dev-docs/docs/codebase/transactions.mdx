@@ -1,0 +1,121 @@
+# Transactions
+
+## Transaction + Ledger System
+
+This system lets many canvas mutations over a time window (for example AI streaming patch/action/create) render immediately, while still producing a single undoable durable history entry.
+
+- AI streaming typically emits many `NEVER` updates (for real-time visual feedback).
+- `NEVER` updates store snapshots, but does not write undo/redo history.
+- If we only do a final "one IMMEDIATELY at the end", we often miss the intended delta because snapshots may already be aligned.
+- Transaction + Ledger creates synthetic logical before/after snapshots, then commits one durable increment with correct undo semantics.
+
+## Key Files
+
+### `packages/excalidraw/transaction/manager.ts`
+
+- `TransactionManager`: session entry point.
+- `TransactionSession`:
+  - `apply()`: runs a mutation and records before/after diff automatically.
+  - `capture()`: records caller-provided before/after snapshots.
+  - `setAppStatePatch()`: optional appState before/after patch for synthetic history.
+  - `commit()` / `cancel()`: finalize session and return an idempotent summary.
+
+### `packages/element/src/transaction/ledger.ts`
+
+- `TransactionLedger` keeps net mutation state across steps.
+- `recordStep()`: folds multiple updates into per-element baseline/target/touchedProps.
+- `buildSyntheticSnapshots()`: reconciles ledger state with live scene under merge policy and returns `logicalBefore` / `logicalAfter` for history commit.
+
+### `packages/excalidraw/components/App.tsx`
+
+- `commitSyntheticHistoryEntry()` converts `logicalBefore/logicalAfter` into `StoreSnapshot -> StoreChange -> StoreDelta`.
+- It does not mutate the live scene; it only commits a synthetic durable increment.
+- `appStateBefore/After` are overlaid on top of current observed appState baseline, so only provided keys participate in synthetic diff.
+
+### `packages/element/src/store.ts`
+
+- `enqueueIsolatedIncrement()` / `flushIsolatedIncrements()` / `requestIsolatedIncrementFlush()`.
+- Adds an isolated lane/queue for synthetic durable increments outside regular micro/macro capture flow.
+- Flush runs only when store is idle (`isIdle()`); otherwise it defers and retries next frame.
+
+### `packages/excalidraw/types.ts` + `packages/element/src/transaction/types.ts` + `packages/excalidraw/transaction/types.ts`
+
+- App/type wiring and merge-policy types used by the transaction system.
+
+## How They Work Together
+
+1. Caller opens a session (`app.transactionManager.open()`).
+2. AI steps keep rendering in real time (commonly via `NEVER`).
+3. Session records diffs continuously via `apply()` / `capture()` into ledger.
+4. On session `commit()`:
+   - ledger builds `logicalBefore/logicalAfter`
+   - `App.commitSyntheticHistoryEntry()` computes change/delta
+   - `store.enqueueIsolatedIncrement()` pushes to isolated queue
+5. Store flushes isolated queue when idle and emits durable increment to undo stack.
+
+Result:
+
+- streaming visuals stay immediate;
+- history remains one entry per transaction;
+- synthetic durable commit stays isolated from ongoing regular capture batches.
+
+## Why Isolated Lane/Queue Matters
+
+Without isolated lane, synthetic increments may interleave with normal editor flows (pointer interactions, macro captures, pending micro actions), causing:
+
+- polluted undo boundaries,
+- unstable commit timing,
+- non-deterministic behavior due to shared capture channel contention.
+
+Core value of isolated lane:
+
+- structural isolation from regular capture flow,
+- timing control (flush only on idle),
+- deferred retry when not idle.
+
+## Sample Usage
+
+### AI Short Session (compact multi-step)
+
+```ts
+const { summary } = await app.transactionManager.run(async (tx) => {
+  // run() auto-commits on success and auto-cancels on thrown errors.
+  // Short session can still include multiple steps.
+  await tx.apply(async () => executeUpdateStepA());
+  await tx.apply(async () => executeUpdateStepB());
+});
+```
+
+### AI Long Session (multi-step mixed flow)
+
+```ts
+const session = app.transactionManager.open();
+
+try {
+  // step 1
+  await session.apply(async () => executeUpdateStep1());
+
+  // step 2
+  await session.apply(async () => executeCreateStep2());
+
+  // step 3
+  await session.apply(async () => executeUpdateStep3());
+
+  // Optional: include selected appState keys in synthetic history
+  session.setAppStatePatch({
+    before: { selectedElementIds: prevSelectedIds },
+    after: { selectedElementIds: nextSelectedIds },
+  });
+
+  session.commit();
+} catch (error) {
+  session.cancel();
+  throw error;
+}
+```
+
+## Notes
+
+- `commit()` and `cancel()` are idempotent.
+- merge policy currently uses `conflictWinner` + `conflictScope`.
+- current implementation prioritizes semantic correctness and readability; fine-grained performance optimizations can be added later.

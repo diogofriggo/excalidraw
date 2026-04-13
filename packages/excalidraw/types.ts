@@ -796,7 +796,9 @@ export type AppClassProperties = {
   files: BinaryFiles;
   editorInterface: App["editorInterface"];
   scene: App["scene"];
+  transactionManager: App["transactionManager"];
   syncActionResult: App["syncActionResult"];
+  commitSyntheticHistoryEntry: App["commitSyntheticHistoryEntry"];
   fonts: App["fonts"];
   pasteFromClipboard: App["pasteFromClipboard"];
   id: App["id"];
