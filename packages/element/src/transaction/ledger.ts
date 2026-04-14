@@ -105,7 +105,10 @@ const collectTouchedProps = (
       continue;
     }
     if (
-      !isLedgerValueEqual(getElementProp(before, key), getElementProp(after, key))
+      !isLedgerValueEqual(
+        getElementProp(before, key),
+        getElementProp(after, key),
+      )
     ) {
       touchedProps.add(key);
     }
