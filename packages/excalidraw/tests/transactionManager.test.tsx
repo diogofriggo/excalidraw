@@ -291,6 +291,75 @@ describe("TransactionManager", () => {
     });
   });
 
+  it("defers isolated transaction commit until store is idle", async () => {
+    const transactionElement = API.createElement({
+      type: "rectangle",
+      id: "tx-idle",
+      x: 0,
+      y: 0,
+    });
+    const userElement = API.createElement({
+      type: "rectangle",
+      id: "user-idle",
+      x: 300,
+      y: 0,
+    });
+    const store = h.store as {
+      scheduleAction: (
+        action: (typeof CaptureUpdateAction)[keyof typeof CaptureUpdateAction],
+      ) => void;
+      hasPendingIsolatedIncrements: () => boolean;
+    };
+
+    setSceneBaseline([transactionElement, userElement]);
+    expect(API.getUndoStack().length).toBe(0);
+
+    const session = h.app.transactionManager.open();
+    await session.apply(async () => {
+      applyElementUpdate(transactionElement.id, { x: 180 }, "NEVER");
+    });
+
+    // Keep store non-idle so isolated increment cannot flush immediately.
+    act(() => {
+      store.scheduleAction(CaptureUpdateAction.EVENTUALLY);
+    });
+
+    const summary = commitSession(session);
+    expect(summary.historyCommitted).toBe(true);
+    expect(store.hasPendingIsolatedIncrements()).toBe(true);
+    expect(API.getUndoStack().length).toBe(0);
+
+    applyElementUpdate(userElement.id, { y: 220 }, "IMMEDIATELY");
+
+    await waitFor(() => {
+      expect(store.hasPendingIsolatedIncrements()).toBe(false);
+      expect(API.getUndoStack().length).toBe(2);
+    });
+
+    let liveTxElement = getElement(transactionElement.id)!;
+    let liveUserElement = getElement(userElement.id)!;
+    expect(liveTxElement.x).toBe(180);
+    expect(liveUserElement.y).toBe(220);
+
+    // Latest entry should still be the isolated transaction increment.
+    act(() => {
+      Keyboard.undo();
+    });
+    await waitFor(() => {
+      liveTxElement = getElement(transactionElement.id)!;
+      expect(liveTxElement.x).toBe(transactionElement.x);
+      expect(getElement(userElement.id)?.y).toBe(220);
+    });
+
+    act(() => {
+      Keyboard.undo();
+    });
+    await waitFor(() => {
+      liveUserElement = getElement(userElement.id)!;
+      expect(liveUserElement.y).toBe(userElement.y);
+    });
+  });
+
   it("undoes transaction-created elements without rolling back user history entries", async () => {
     const base = API.createElement({
       type: "rectangle",

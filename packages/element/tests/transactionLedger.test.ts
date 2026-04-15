@@ -122,4 +122,58 @@ describe("TransactionLedger", () => {
     expect(logicalBefore.get(live.id)?.strokeColor).toBe("#000000");
     expect(logicalAfter.get(live.id)?.strokeColor).toBe("#ff006e");
   });
+
+  it("applies per-prop conflict handling and supports element-scope skip", () => {
+    const ledger = new TransactionLedger();
+    const baseline = API.createElement({
+      type: "rectangle",
+      id: "rect-1",
+      strokeColor: "#000000",
+      backgroundColor: "#ffffff",
+    });
+    const target = {
+      ...baseline,
+      strokeColor: "#ff006e",
+      backgroundColor: "#ffd8a8",
+      version: baseline.version + 1,
+    };
+    const live = {
+      ...target,
+      strokeColor: "#3a86ff",
+      backgroundColor: "#ffd8a8",
+      version: target.version + 1,
+    };
+
+    ledger.recordStep(arrayToMap([baseline]), arrayToMap([target]));
+
+    const propScope = ledger.buildSyntheticSnapshots(
+      arrayToMap([live]),
+      DEFAULT_TRANSACTION_MERGE_POLICY,
+    );
+    expect(propScope.logicalBefore.get(live.id)?.strokeColor).toBe("#3a86ff");
+    expect(propScope.logicalAfter.get(live.id)?.strokeColor).toBe("#3a86ff");
+    expect(propScope.logicalBefore.get(live.id)?.backgroundColor).toBe(
+      "#ffffff",
+    );
+    expect(propScope.logicalAfter.get(live.id)?.backgroundColor).toBe(
+      "#ffd8a8",
+    );
+
+    const elementScope = ledger.buildSyntheticSnapshots(arrayToMap([live]), {
+      ...DEFAULT_TRANSACTION_MERGE_POLICY,
+      conflictScope: "element",
+    });
+    expect(elementScope.logicalBefore.get(live.id)?.strokeColor).toBe(
+      "#3a86ff",
+    );
+    expect(elementScope.logicalAfter.get(live.id)?.strokeColor).toBe(
+      "#3a86ff",
+    );
+    expect(elementScope.logicalBefore.get(live.id)?.backgroundColor).toBe(
+      "#ffd8a8",
+    );
+    expect(elementScope.logicalAfter.get(live.id)?.backgroundColor).toBe(
+      "#ffd8a8",
+    );
+  });
 });
