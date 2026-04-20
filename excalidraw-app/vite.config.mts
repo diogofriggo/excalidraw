@@ -8,6 +8,7 @@ import checker from "vite-plugin-checker";
 import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
+import { apiPlugin } from "./server/api-plugin";
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
@@ -17,6 +18,9 @@ export default defineConfig(({ mode }) => {
       port: Number(envVars.VITE_APP_PORT || 3000),
       // open the browser
       open: true,
+      // bind on all interfaces so the dev server is reachable from other
+      // devices on the LAN (e.g. http://192.168.x.y:3001)
+      host: true,
     },
     // We need to specify the envDir since now there are no
     //more located in parallel with the vite.config.ts file but in parent dir
@@ -125,6 +129,7 @@ export default defineConfig(({ mode }) => {
         // its static in public folder
         generateRobotsTxt: false,
       }),
+      apiPlugin(),
       woff2BrowserPlugin(),
       react(),
       checker({

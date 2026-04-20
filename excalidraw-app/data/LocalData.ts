@@ -44,6 +44,7 @@ import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
 import { Locker } from "./Locker";
+import { ensureActiveDiagramForSave, saveDiagram } from "./MyDiagrams";
 import { updateBrowserStateVersion } from "./tabSync";
 
 const filesStore = createStore("files-db", "files-store");
@@ -122,6 +123,8 @@ export class LocalData {
       files: BinaryFiles,
       onFilesSaved: () => void,
     ) => {
+      const nonDeletedElements = getNonDeletedElements(elements);
+
       saveDataStateToLocalStorage(elements, appState);
 
       await this.fileStorage.saveFiles({
@@ -129,6 +132,25 @@ export class LocalData {
         files,
       });
       onFilesSaved();
+
+      const activeId = await ensureActiveDiagramForSave(
+        nonDeletedElements.length > 0,
+      );
+      if (activeId) {
+        try {
+          await saveDiagram(
+            activeId,
+            {
+              elements: nonDeletedElements,
+              appState: clearAppStateForLocalStorage(appState),
+              files,
+            },
+            { regenerateThumbnail: false },
+          );
+        } catch (err) {
+          console.warn("mirror save to MyDiagrams failed", err);
+        }
+      }
     },
     SAVE_TO_LOCAL_STORAGE_TIMEOUT,
   );
